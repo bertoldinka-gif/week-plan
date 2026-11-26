@@ -456,6 +456,29 @@
             line-height: 1.4;
             margin-top: 6px;
         }
+
+        .sync-status-text {
+            font-size: 13px;
+            margin-top: 10px;
+            padding: 8px 10px;
+            border-radius: 8px;
+            display: none;
+            line-height: 1.4;
+        }
+
+        .sync-status-text.success {
+            display: block;
+            background: #e0f5f3;
+            color: #008b7c;
+            border: 1px solid #00a896;
+        }
+
+        .sync-status-text.error {
+            display: block;
+            background: #fde8ea;
+            color: #b91c1c;
+            border: 1px solid #e63946;
+        }
     </style>
 </head>
 <body>
@@ -511,6 +534,7 @@
                     Чтобы дела обновлялись у всей семьи, получите бесплатный токен на
                     yandex.ru/dev/disk/poligon (под общей почтой) и вставьте его на всех телефонах.
                 </p>
+                <div id="syncStatusText" class="sync-status-text"></div>
             </div>
             <div class="modal-buttons">
                 <button class="btn btn-cancel" onclick="closeModal('settingsModal')">Закрыть</button>
@@ -523,7 +547,7 @@
         let weekOffset = 0;
         let expandedDates = new Set();
         let selectedDateStr = '';
-        let editingTaskId = null; // null = добавление, иначе id редактируемого дела
+        let editingTaskId = null;
         let appData = {
             updatedAt: 0,
             tasks: [],
@@ -532,7 +556,8 @@
 
         const MONTHS_GEN = ['Января', 'Февраля', 'Марта', 'Апреля', 'Мая', 'Июня', 'Июля', 'Августа', 'Сентября', 'Октября', 'Ноября', 'Декабря'];
         const DAYS_SHORT = ['пн', 'вт', 'ср', 'чт', 'пт', 'сб', 'вс'];
-        const YD_FILE_PATH = 'app:/family_planner_data.json';
+        const YD_FILE_PATH = 'disk:/family_planner_data.json';
+        const YD_API_BASE = 'https://cloud-api.yandex.net/v1/disk';
 
         function init() {
             const local = localStorage.getItem('family_planner_v1');
@@ -747,9 +772,6 @@
             editingTaskId = taskId;
             selectedDateStr = task.dateStr;
 
-            const parts = task.dateStr.split('-').map(Number);
-            const readableDate = `${parts[2]} ${MONTHS_GEN[parts[1] - 1]}`;
-
             document.getElementById('modalDateTitle').textContent = 'Редактировать дело';
             document.getElementById('taskTitleInput').value = task.title || '';
             document.getElementById('taskTimeInput').value = task.time || '';
@@ -766,7 +788,6 @@
             }
         }
 
-        // Единая точка сохранения: добавление или обновление дела
         function submitTaskForm() {
             if (editingTaskId) {
                 saveEditedTask();
@@ -814,7 +835,6 @@
             const time = document.getElementById('taskTimeInput').value;
             const repeat = document.getElementById('taskRepeatInput').checked;
 
-            // Пересчитываем день недели по дате дела
             const [y, m, d] = task.dateStr.split('-').map(Number);
             const dObj = new Date(y, m - 1, d);
             const jsDay = dObj.getDay();
@@ -854,15 +874,62 @@
 
         function openSettings() {
             document.getElementById('ydTokenInput').value = localStorage.getItem('yd_oauth_token') || '';
+            const statusEl = document.getElementById('syncStatusText');
+            statusEl.className = 'sync-status-text';
+            statusEl.textContent = '';
             document.getElementById('settingsModal').classList.add('open');
         }
 
-        function saveSettings() {
+        function showSyncStatus(message, isSuccess) {
+            const statusEl = document.getElementById('syncStatusText');
+            statusEl.textContent = message;
+            statusEl.className = `sync-status-text ${isSuccess ? 'success' : 'error'}`;
+        }
+
+        async function saveSettings() {
             const token = document.getElementById('ydTokenInput').value.trim();
-            localStorage.setItem('yd_oauth_token', token);
-            closeModal('settingsModal');
-            updateSyncDot();
-            if (token) pullFromYandexDisk();
+            if (!token) {
+                showSyncStatus('Введите OAuth-токен.', false);
+                return;
+            }
+
+            showSyncStatus('Проверка токена…', false);
+
+            try {
+                const res = await fetch(`${YD_API_BASE}/?path=${encodeURIComponent(YD_FILE_PATH)}`, {
+                    headers: { 'Authorization': `OAuth ${token}` }
+                });
+
+                if (res.status === 401) {
+                    showSyncStatus('Ошибка 401: неверный токен.', false);
+                    return;
+                }
+
+                if (res.status === 404) {
+                    // Файла ещё нет — создадим его первым сохранением
+                    localStorage.setItem('yd_oauth_token', token);
+                    await pushToYandexDisk();
+                    showSyncStatus('Успешно подключено! Файл создан и синхронизирован.', true);
+                    closeModal('settingsModal');
+                    updateSyncDot();
+                    return;
+                }
+
+                if (!res.ok) {
+                    const errText = await res.text().catch(() => '');
+                    showSyncStatus(`Ошибка ${res.status}: ${errText || 'не удалось проверить токен'}`, false);
+                    return;
+                }
+
+                // Токен рабочий, файл существует — сохраняем и подтягиваем данные
+                localStorage.setItem('yd_oauth_token', token);
+                await pullFromYandexDisk();
+                showSyncStatus('Успешно подключено! Файл синхронизирован.', true);
+                closeModal('settingsModal');
+                updateSyncDot();
+            } catch (e) {
+                showSyncStatus('Ошибка сети. Проверьте подключение к интернету.', false);
+            }
         }
 
         function updateSyncDot(state = 'idle') {
@@ -879,18 +946,32 @@
 
             try {
                 updateSyncDot('syncing');
-                const res = await fetch(`https://yandex.net{encodeURIComponent(YD_FILE_PATH)}`, {
+                const metaRes = await fetch(`${YD_API_BASE}/resources?path=${encodeURIComponent(YD_FILE_PATH)}`, {
                     headers: { 'Authorization': `OAuth ${token}` }
                 });
 
-                if (res.status === 404) {
+                if (metaRes.status === 404) {
+                    // Файла нет — загружаем текущее состояние
                     await pushToYandexDisk();
                     return;
                 }
-                if (!res.ok) throw new Error('Ошибка чтения');
 
-                const { href } = await res.json();
+                if (!metaRes.ok) throw new Error('Ошибка чтения метаданных');
+
+                // Получаем ссылку на скачивание
+                const dlRes = await fetch(`${YD_API_BASE}/resources/download?path=${encodeURIComponent(YD_FILE_PATH)}`, {
+                    headers: { 'Authorization': `OAuth ${token}` }
+                });
+
+                if (!dlRes.ok) throw new Error('Ошибка получения ссылки на скачивание');
+
+                const { href } = await dlRes.json();
+
+                // ВАЖНО: скачиваем по подписанной ссылке БЕЗ заголовка Authorization,
+                // иначе браузер блокирует запрос из-за CORS на downloader.disk.yandex.ru
                 const fileRes = await fetch(href);
+                if (!fileRes.ok) throw new Error('Ошибка скачивания файла');
+
                 const cloudData = await fileRes.json();
 
                 if (cloudData && cloudData.updatedAt > appData.updatedAt) {
@@ -911,12 +992,14 @@
 
             try {
                 updateSyncDot('syncing');
-                const res = await fetch(`https://yandex.net{encodeURIComponent(YD_FILE_PATH)}&overwrite=true`, {
+                const res = await fetch(`${YD_API_BASE}/resources/upload?path=${encodeURIComponent(YD_FILE_PATH)}&overwrite=true`, {
                     headers: { 'Authorization': `OAuth ${token}` }
                 });
                 if (!res.ok) throw new Error('Ошибка получения ссылки загрузки');
 
                 const { href } = await res.json();
+
+                // Загрузка по подписанной ссылке также без Authorization
                 await fetch(href, {
                     method: 'PUT',
                     body: JSON.stringify(appData)
