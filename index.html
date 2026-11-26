@@ -856,29 +856,202 @@
             renderWeek();
         }
 
-        // --- Экспорт / импорт ---
-        function encodeData(data) {
-            const json = JSON.stringify(data);
-            const bytes = new TextEncoder().encode(json);
+        // --- Экспорт / импорт: компактный формат + LZW + Base64URL ---
+
+        // LZW-сжатие строки в массив байтов (Unicode-safe через UTF-8)
+        function lzwEncode(str) {
+            const dict = new Map();
+            let dictSize = 256;
+            for (let i = 0; i < 256; i++) dict.set(String.fromCharCode(i), i);
+            let w = '';
+            const out = [];
+            for (const ch of str) {
+                const wc = w + ch;
+                if (dict.has(wc)) {
+                    w = wc;
+                } else {
+                    out.push(dict.get(w));
+                    if (dictSize < 65536) {
+                        dict.set(wc, dictSize++);
+                    }
+                    w = ch;
+                }
+            }
+            if (w !== '') out.push(dict.get(w));
+            // Упаковываем 16-битные коды в байты (big-endian)
+            const bytes = new Uint8Array(out.length * 2);
+            for (let i = 0; i < out.length; i++) {
+                bytes[i * 2] = (out[i] >> 8) & 0xff;
+                bytes[i * 2 + 1] = out[i] & 0xff;
+            }
+            return bytes;
+        }
+
+        function lzwDecode(bytes) {
+            const codes = [];
+            for (let i = 0; i < bytes.length; i += 2) {
+                codes.push((bytes[i] << 8) | bytes[i + 1]);
+            }
+            const dict = new Map();
+            let dictSize = 256;
+            for (let i = 0; i < 256; i++) dict.set(i, String.fromCharCode(i));
+            let w = String.fromCharCode(codes[0]);
+            let result = w;
+            for (let i = 1; i < codes.length; i++) {
+                const k = codes[i];
+                let entry;
+                if (dict.has(k)) {
+                    entry = dict.get(k);
+                } else if (k === dictSize) {
+                    entry = w + w[0];
+                } else {
+                    throw new Error('Bad LZW code');
+                }
+                result += entry;
+                if (dictSize < 65536) {
+                    dict.set(dictSize++, w + entry[0]);
+                }
+                w = entry;
+            }
+            return result;
+        }
+
+        // UTF-8 ↔ байты
+        function utf8ToBytes(str) {
+            return new TextEncoder().encode(str);
+        }
+        function bytesToUtf8(bytes) {
+            return new TextDecoder().decode(bytes);
+        }
+
+        // Base64URL (без '+' '/' '=') ↔ байты
+        function bytesToBase64Url(bytes) {
             let binary = '';
             for (let i = 0; i < bytes.length; i++) {
                 binary += String.fromCharCode(bytes[i]);
             }
-            return btoa(binary);
+            return btoa(binary)
+                .replace(/\+/g, '-')
+                .replace(/\//g, '_')
+                .replace(/=+$/, '');
         }
 
-        function decodeData(code) {
-            const binary = atob(code.trim());
+        function base64UrlToBytes(str) {
+            let b64 = str.replace(/-/g, '+').replace(/_/g, '/');
+            while (b64.length % 4) b64 += '=';
+            const binary = atob(b64);
             const bytes = new Uint8Array(binary.length);
             for (let i = 0; i < binary.length; i++) {
                 bytes[i] = binary.charCodeAt(i);
             }
-            const json = new TextDecoder().decode(bytes);
-            return JSON.parse(json);
+            return bytes;
+        }
+
+        // Компактный формат: [version, updatedAt, tasks, completed]
+        // tasks: массив [id, title, time, repeat, dow, dateStr]
+        // completed: массив [taskId, dateISO] только за последние 14 дней
+        function buildCompactPayload() {
+            const cutoff = new Date();
+            cutoff.setDate(cutoff.getDate() - 14);
+            const cutoffISO = formatDateISO(cutoff);
+
+            const compactTasks = appData.tasks.map(t => ([
+                t.id,
+                t.title,
+                t.time || '',
+                t.repeat ? 1 : 0,
+                t.dow ?? 0,
+                t.dateStr
+            ]));
+
+            const compactCompleted = [];
+            for (const key of Object.keys(appData.completed)) {
+                // ключ вида "<taskId>_<YYYY-MM-DD>"
+                const sep = key.lastIndexOf('_');
+                if (sep < 0) continue;
+                const taskId = key.slice(0, sep);
+                const dateISO = key.slice(sep + 1);
+                if (dateISO >= cutoffISO) {
+                    compactCompleted.push([taskId, dateISO]);
+                }
+            }
+
+            return [1, appData.updatedAt || Date.now(), compactTasks, compactCompleted];
+        }
+
+        function expandCompactPayload(payload) {
+            if (!Array.isArray(payload) || payload[0] !== 1) {
+                throw new Error('Unknown payload version');
+            }
+            const [, updatedAt, compactTasks, compactCompleted] = payload;
+            const tasks = compactTasks.map(row => {
+                const [id, title, time, repeatNum, dow, dateStr] = row;
+                return {
+                    id,
+                    title,
+                    time: time || '',
+                    repeat: !!repeatNum,
+                    dow: dow ?? 0,
+                    dateStr
+                };
+            });
+            const completed = {};
+            for (const pair of (compactCompleted || [])) {
+                if (!Array.isArray(pair) || pair.length < 2) continue;
+                completed[`${pair[0]}_${pair[1]}`] = true;
+            }
+            return {
+                updatedAt: updatedAt || Date.now(),
+                tasks,
+                completed
+            };
+        }
+
+        // --- Основные функции экспорта/импорта ---
+
+        function encodeData() {
+            const compact = buildCompactPayload();
+            const json = JSON.stringify(compact);
+            const bytes = lzwEncode(json);
+            return bytesToBase64Url(bytes);
+        }
+
+        function decodeData(code) {
+            const trimmed = String(code).trim();
+
+            // 1) Новый формат: LZW + Base64URL
+            try {
+                const bytes = base64UrlToBytes(trimmed);
+                const json = lzwDecode(bytes);
+                const payload = JSON.parse(json);
+                return expandCompactPayload(payload);
+            } catch (e) {
+                // fallthrough
+            }
+
+            // 2) Старый формат: Base64 от JSON {updatedAt, tasks, completed}
+            try {
+                let b64 = trimmed.replace(/-/g, '+').replace(/_/g, '/');
+                while (b64.length % 4) b64 += '=';
+                const binary = atob(b64);
+                const utf8 = bytesToUtf8(new Uint8Array([...binary].map(c => c.charCodeAt(0))));
+                const data = JSON.parse(utf8);
+                if (data && Array.isArray(data.tasks)) {
+                    return {
+                        updatedAt: data.updatedAt || Date.now(),
+                        tasks: data.tasks,
+                        completed: data.completed || {}
+                    };
+                }
+            } catch (e) {
+                // ignore
+            }
+
+            throw new Error('Не удалось распознать код');
         }
 
         function openExportModal() {
-            const code = encodeData(appData);
+            const code = encodeData();
             document.getElementById('exportCodeArea').value = code;
             document.getElementById('exportModal').classList.add('open');
         }
