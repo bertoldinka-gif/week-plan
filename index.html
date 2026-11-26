@@ -35,7 +35,6 @@
             padding-bottom: 30px;
         }
 
-        /* Верхняя панель */
         .header {
             background-color: var(--teal);
             color: white;
@@ -123,7 +122,6 @@
             100% { transform: scale(1); opacity: 1; }
         }
 
-        /* Список дней */
         .days-container {
             max-width: 600px;
             margin: 12px auto;
@@ -153,7 +151,6 @@
             cursor: pointer;
         }
 
-        /* Левый блок с датой */
         .date-box {
             width: 72px;
             text-align: center;
@@ -187,7 +184,6 @@
             color: var(--text-muted);
         }
 
-        /* Цвета текста для сегодня и выходных */
         .day-card.today .dow,
         .day-card.today .day-num,
         .day-card.today .month-name {
@@ -199,7 +195,6 @@
             color: var(--red);
         }
 
-        /* Центральный блок со статусом и прогрессом */
         .status-box {
             flex-grow: 1;
             min-width: 0;
@@ -241,7 +236,6 @@
             transition: width 0.3s ease, background-color 0.3s ease;
         }
 
-        /* Кнопка плюс справа */
         .add-btn {
             width: 38px;
             height: 38px;
@@ -264,7 +258,6 @@
             border-color: var(--teal);
         }
 
-        /* Раскрывающийся список дел */
         .tasks-list {
             display: none;
             padding: 8px 14px 14px 14px;
@@ -348,7 +341,6 @@
             color: var(--red);
         }
 
-        /* Модальные окна */
         .modal-overlay {
             position: fixed;
             inset: 0;
@@ -395,17 +387,19 @@
             padding: 10px 12px;
             border: 1px solid #cbd5e1;
             border-radius: 10px;
-font-size: 15px;
-outline: none;
-}
-.form-input:focus {
-border-color: var(--teal);
-}
-.checkbox-row {
-display: flex;
-align-items: center;
-gap: 10px;
-cursor: pointer;
+            font-size: 15px;
+            outline: none;
+        }
+
+        .form-input:focus {
+            border-color: var(--teal);
+        }
+
+        .checkbox-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            cursor: pointer;
 font-size: 15px;
 padding: 4px 0;
 }
@@ -469,13 +463,9 @@ OAuth-токен Яндекс Диска
 Сохранить
 
 
-// Состояние приложения
-let weekOffset = 0; // 0 = текущая неделя
-let expandedDates = new Set(); // какие карточки раскрыты
-let selectedDateStr = ''; // дата для добавления дела
-// Хранилище данных:
-// tasks: [{ id, title, time, repeat, dow (0-6, где 0=Пн), dateStr ('YYYY-MM-DD') }]
-// completed: { 'taskId_YYYY-MM-DD': true }
+let weekOffset = 0;
+let expandedDates = new Set();
+let selectedDateStr = '';
 let appData = {
 updatedAt: 0,
 tasks: [],
@@ -484,28 +474,23 @@ completed: {}
 const MONTHS_GEN = ['Января', 'Февраля', 'Марта', 'Апреля', 'Мая', 'Июня', 'Июля', 'Августа', 'Сентября', 'Октября', 'Ноября', 'Декабря'];
 const DAYS_SHORT = ['пн', 'вт', 'ср', 'чт', 'пт', 'сб', 'вс'];
 const YD_FILE_PATH = 'app:/family_planner_data.json';
-// Инициализация
 function init() {
 const local = localStorage.getItem('family_planner_v1');
 if (local) {
 try { appData = JSON.parse(local); } catch (e) {}
 }
-// По умолчанию раскрываем сегодняшний день
 const todayStr = formatDateISO(new Date());
 expandedDates.add(todayStr);
 renderWeek();
 updateSyncDot();
-// Первичная синхронизация и фоновый опрос каждые 15 секунд
 pullFromYandexDisk();
 setInterval(pullFromYandexDisk, 15000);
 }
-// Работа с датами
 function getMonday(offsetWeeks = 0) {
 const now = new Date();
-const day = now.getDay(); // 0 (Вс) .. 6 (Сб)
+const day = now.getDay();
 const diff = (day === 0 ? -6 : 1) - day + (offsetWeeks * 7);
-const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate() + diff);
-return monday;
+return new Date(now.getFullYear(), now.getMonth(), now.getDate() + diff);
 }
 function formatDateISO(date) {
 const y = date.getFullYear();
@@ -522,14 +507,13 @@ weekOffset = 0;
 expandedDates.add(formatDateISO(new Date()));
 renderWeek();
 }
-// Отрисовка недели
 function renderWeek() {
 const container = document.getElementById('daysContainer');
+if (!container) return;
 container.innerHTML = '';
 const monday = getMonday(weekOffset);
 const sunday = new Date(monday);
 sunday.setDate(monday.getDate() + 6);
-// Заголовок недели в шапке
 if (weekOffset === 0) {
 document.getElementById('weekTitle').textContent = 'Текущая неделя';
 } else {
@@ -542,9 +526,6 @@ current.setDate(monday.getDate() + i);
 const dateISO = formatDateISO(current);
 const isToday = (dateISO === todayISO);
 const isWeekend = (i === 5 || i === 6);
-// Фильтруем дела для этого дня:
-// 1) Разовые именно на эту дату
-// 2) Повторяющиеся на этот день недели (при условии, что текущая дата >= даты создания задачи)
 const dayTasks = appData.tasks.filter(t => {
 if (t.repeat) {
 return t.dow === i && dateISO >= t.dateStr;
@@ -552,7 +533,6 @@ return t.dow === i && dateISO >= t.dateStr;
 return t.dateStr === dateISO;
 }
 });
-// Сортируем по времени (дела со временем выше, затем без времени)
 dayTasks.sort((a, b) => {
 if (a.time && b.time) return a.time.localeCompare(b.time);
 if (a.time) return -1;
@@ -564,7 +544,6 @@ let doneCount = 0;
 dayTasks.forEach(t => {
 if (appData.completed[${t.id}_${dateISO}]) doneCount++;
 });
-// Текст статуса и цвет полоски
 let statusText = 'Нет дел';
 let barColor = '#cbd5e1';
 let percent = 0;
@@ -572,11 +551,11 @@ if (total > 0) {
 percent = Math.round((doneCount / total) * 100);
 if (doneCount === total) {
 statusText = 'Дела решены';
-barColor = '#00a896'; // Бирюзовый
+barColor = '#00a896';
 } else if (isToday) {
 const left = total - doneCount;
 statusText = ${left} ${pluralizeTasks(left)};
-barColor = '#e63946'; // Красный акцент на сегодня
+barColor = '#e63946';
 } else {
 statusText = ${total} ${pluralizeAll(total)};
 barColor = doneCount > 0 ? '#f4a261' : '#e63946';
@@ -588,7 +567,7 @@ let tasksHtml = '';
 if (dayTasks.length === 0) {
 tasksHtml = <div class="empty-tasks">Задач на этот день пока нет</div>;
 } else {
-tasksHtml = (t => {
+tasksHtml = dayTasks.map(t => {
 const isDone = !!appData.completed[${t.id}_${dateISO}];
 return <div class="task-item ${isDone ? 'done' : ''}"> <input type="checkbox" class="task-check" ${isDone ? 'checked' : ''} onchange="toggleTask('${t.id}', '${dateISO}')"> <div class="task-info" onclick="toggleTask('${t.id}', '${dateISO}')"> <div class="task-text">${escapeHtml(t.title)}</div> ${(t.time || t.repeat) ?
 
@@ -603,19 +582,22 @@ container.appendChild(card);
 }
 }
 function pluralizeTasks(n) {
-if (n % 10 === 1 && n % 100 !== 11) return 'нерешённое дело';
-if ([2,3,4].includes(n % 10) && ![12,13,14].includes(n % 100)) return 'нерешённых дела';
+const mod10 = n % 10;
+const mod100 = n % 100;
+if (mod10 === 1 && mod100 !== 11) return 'нерешённое дело';
+if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return 'нерешённых дела';
 return 'нерешённых дел';
 }
 function pluralizeAll(n) {
-if (n % 10 === 1 && n % 100 !== 11) return 'дело';
-if ([2,3,4].includes(n % 10) && ![12,13,14].includes(n % 100)) return 'дела';
+const mod10 = n % 10;
+const mod100 = n % 100;
+if (mod10 === 1 && mod100 !== 11) return 'дело';
+if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return 'дела';
 return 'дел';
 }
 function escapeHtml(str) {
 return str.replace(/[&<>"']/g, m => ({'&':'&','<':'<','>':'>','"':'"',"'":'''}[m]));
 }
-// Действия пользователя
 function toggleDayExpand(dateISO) {
 if (expandedDates.has(dateISO)) {
 expandedDates.delete(dateISO);
@@ -642,10 +624,10 @@ const title = document.getElementById('taskTitleInput').value.trim();
 if (!title) return;
 const time = document.getElementById('taskTimeInput').value;
 const repeat = document.getElementById('taskRepeatInput').checked;
-const parts = selectedDateStr.split('-');
+const parts = selectedDateStr.split('-').map(Number);
 const dObj = new Date(parts[0], parts[1] - 1, parts[2]);
 const jsDay = dObj.getDay();
-const dow = jsDay === 0 ? 6 : jsDay - 1; // 0 = Пн .. 6 = Вс
+const dow = jsDay === 0 ? 6 : jsDay - 1;
 appData.tasks.push({
 id: 't_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
 title,
@@ -669,16 +651,15 @@ saveAndSync();
 }
 function deleteTask(taskId) {
 if (!confirm('Удалить это дело? (Если оно повторяющееся, оно удалится со всех недель)')) return;
-appData.tasks = appData.tasks.filter(t =>  !== taskId);
+appData.tasks = appData.tasks.filter(t => t.id !== taskId);
 saveAndSync();
 }
 function saveAndSync() {
-appData.updatedAt = ();
+appData.updatedAt = Date.now();
 localStorage.setItem('family_planner_v1', JSON.stringify(appData));
 renderWeek();
 pushToYandexDisk();
 }
-// Настройки и синхронизация с Яндекс Диском
 function openSettings() {
 document.getElementById('ydTokenInput').value = localStorage.getItem('yd_oauth_token') || '';
 document.getElementById('settingsModal').classList.add('open');
@@ -706,7 +687,6 @@ const res = await fetch(https://yandex.net{encodeURIComponent(YD_FILE_PATH)}, {
 headers: { 'Authorization': OAuth ${token} }
 });
 if (res.status === 404) {
-// Файла еще нет на диске — создадим его из текущих данных
 await pushToYandexDisk();
 return;
 }
@@ -746,3 +726,5 @@ updateSyncDot('idle');
 }
 }
 init();
+
+
