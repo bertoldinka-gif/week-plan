@@ -328,13 +328,27 @@
             font-weight: 500;
         }
 
+        .task-actions {
+            display: flex;
+            align-items: center;
+            gap: 2px;
+            flex-shrink: 0;
+        }
+
+        .edit-task-btn,
         .del-task-btn {
             background: none;
             border: none;
             color: #cbd5e1;
-            font-size: 18px;
-            padding: 4px 8px;
+            font-size: 17px;
+            padding: 4px 6px;
             cursor: pointer;
+            border-radius: 6px;
+            line-height: 1;
+        }
+
+        .edit-task-btn:hover {
+            color: var(--teal);
         }
 
         .del-task-btn:hover {
@@ -461,10 +475,9 @@
         </div>
     </header>
 
-    <!-- Основной контейнер для карточек дней недели -->
     <main id="daysContainer" class="days-container"></main>
 
-    <!-- Модальное окно добавления дела -->
+    <!-- Модальное окно добавления/редактирования дела -->
     <div class="modal-overlay" id="addModal">
         <div class="modal">
             <h3 id="modalDateTitle">Новое дело</h3>
@@ -482,7 +495,7 @@
             </label>
             <div class="modal-buttons">
                 <button class="btn btn-cancel" onclick="closeModal('addModal')">Отмена</button>
-                <button class="btn btn-primary" onclick="saveNewTask()">Добавить</button>
+                <button class="btn btn-primary" id="taskSubmitBtn" onclick="submitTaskForm()">Добавить</button>
             </div>
         </div>
     </div>
@@ -510,6 +523,7 @@
         let weekOffset = 0;
         let expandedDates = new Set();
         let selectedDateStr = '';
+        let editingTaskId = null; // null = добавление, иначе id редактируемого дела
         let appData = {
             updatedAt: 0,
             tasks: [],
@@ -642,7 +656,10 @@
                                         </div>
                                     ` : ''}
                                 </div>
-                                <button class="del-task-btn" onclick="deleteTask('${t.id}')" title="Удалить дело">✕</button>
+                                <div class="task-actions">
+                                    <button class="edit-task-btn" onclick="openEditModal(event, '${t.id}')" title="Редактировать дело">✎</button>
+                                    <button class="del-task-btn" onclick="deleteTask('${t.id}')" title="Удалить дело">✕</button>
+                                </div>
                             </div>
                         `;
                     }).join('');
@@ -711,17 +728,51 @@
 
         function openAddModal(event, dateISO, readableDate) {
             if (event) event.stopPropagation();
+            editingTaskId = null;
             selectedDateStr = dateISO;
             document.getElementById('modalDateTitle').textContent = `Дело на ${readableDate}`;
             document.getElementById('taskTitleInput').value = '';
             document.getElementById('taskTimeInput').value = '';
             document.getElementById('taskRepeatInput').checked = false;
+            document.getElementById('taskSubmitBtn').textContent = 'Добавить';
+            document.getElementById('addModal').classList.add('open');
+            setTimeout(() => document.getElementById('taskTitleInput').focus(), 100);
+        }
+
+        function openEditModal(event, taskId) {
+            if (event) event.stopPropagation();
+            const task = appData.tasks.find(t => t.id === taskId);
+            if (!task) return;
+
+            editingTaskId = taskId;
+            selectedDateStr = task.dateStr;
+
+            const parts = task.dateStr.split('-').map(Number);
+            const readableDate = `${parts[2]} ${MONTHS_GEN[parts[1] - 1]}`;
+
+            document.getElementById('modalDateTitle').textContent = 'Редактировать дело';
+            document.getElementById('taskTitleInput').value = task.title || '';
+            document.getElementById('taskTimeInput').value = task.time || '';
+            document.getElementById('taskRepeatInput').checked = !!task.repeat;
+            document.getElementById('taskSubmitBtn').textContent = 'Сохранить';
             document.getElementById('addModal').classList.add('open');
             setTimeout(() => document.getElementById('taskTitleInput').focus(), 100);
         }
 
         function closeModal(id) {
             document.getElementById(id).classList.remove('open');
+            if (id === 'addModal') {
+                editingTaskId = null;
+            }
+        }
+
+        // Единая точка сохранения: добавление или обновление дела
+        function submitTaskForm() {
+            if (editingTaskId) {
+                saveEditedTask();
+            } else {
+                saveNewTask();
+            }
         }
 
         function saveNewTask() {
@@ -731,7 +782,6 @@
             const time = document.getElementById('taskTimeInput').value;
             const repeat = document.getElementById('taskRepeatInput').checked;
 
-            // Исправление: правильно разбираем YYYY-MM-DD на числа
             const [y, m, d] = selectedDateStr.split('-').map(Number);
             const dObj = new Date(y, m - 1, d);
             const jsDay = dObj.getDay();
@@ -747,6 +797,34 @@
             });
 
             expandedDates.add(selectedDateStr);
+            closeModal('addModal');
+            saveAndSync();
+        }
+
+        function saveEditedTask() {
+            const task = appData.tasks.find(t => t.id === editingTaskId);
+            if (!task) {
+                closeModal('addModal');
+                return;
+            }
+
+            const title = document.getElementById('taskTitleInput').value.trim();
+            if (!title) return;
+
+            const time = document.getElementById('taskTimeInput').value;
+            const repeat = document.getElementById('taskRepeatInput').checked;
+
+            // Пересчитываем день недели по дате дела
+            const [y, m, d] = task.dateStr.split('-').map(Number);
+            const dObj = new Date(y, m - 1, d);
+            const jsDay = dObj.getDay();
+            const dow = jsDay === 0 ? 6 : jsDay - 1;
+
+            task.title = title;
+            task.time = time;
+            task.repeat = repeat;
+            task.dow = dow;
+
             closeModal('addModal');
             saveAndSync();
         }
