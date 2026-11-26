@@ -1,0 +1,748 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="robots" content="noindex, nofollow">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="theme-color" content="#00a896">
+    <title>Семейный ежедневник</title>
+    <style>
+        :root {
+            --teal: #00a896;
+            --teal-dark: #008b7c;
+            --teal-light: #e0f5f3;
+            --red: #e63946;
+            --bg: #eef2f5;
+            --card-bg: #ffffff;
+            --text-main: #2b2d42;
+            --text-muted: #8d99ae;
+            --border: #e2e8f0;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            background-color: var(--bg);
+            color: var(--text-main);
+            padding-bottom: 30px;
+        }
+
+        /* Верхняя панель */
+        .header {
+            background-color: var(--teal);
+            color: white;
+            padding: 12px 16px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.12);
+        }
+
+        .week-nav {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .nav-btn {
+            background: rgba(255,255,255,0.18);
+            border: none;
+            color: white;
+            width: 34px;
+            height: 34px;
+            border-radius: 8px;
+            font-size: 18px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .nav-btn:active {
+            background: rgba(255,255,255,0.3);
+        }
+
+        .week-title {
+            font-size: 15px;
+            font-weight: 600;
+            text-align: center;
+            min-width: 135px;
+        }
+
+        .header-actions {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .icon-btn {
+            background: transparent;
+            border: none;
+            color: white;
+            font-size: 20px;
+            width: 36px;
+            height: 36px;
+            border-radius: 8px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+        }
+
+        .icon-btn:active {
+            background: rgba(255,255,255,0.2);
+        }
+
+        .sync-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #ffd166;
+            position: absolute;
+            top: 6px;
+            right: 6px;
+        }
+        .sync-dot.connected { background: #06d6a0; }
+        .sync-dot.syncing { background: #ffffff; animation: pulse 0.8s infinite; }
+
+        @keyframes pulse {
+            0% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.4); opacity: 0.6; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+
+        /* Список дней */
+        .days-container {
+            max-width: 600px;
+            margin: 12px auto;
+            padding: 0 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .day-card {
+            background: var(--card-bg);
+            border-radius: 14px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+            overflow: hidden;
+            transition: transform 0.1s;
+        }
+
+        .day-card.today {
+            background: var(--teal-light);
+            border: 1.5px solid var(--teal);
+        }
+
+        .day-main {
+            display: flex;
+            align-items: center;
+            padding: 12px 14px;
+            cursor: pointer;
+        }
+
+        /* Левый блок с датой */
+        .date-box {
+            width: 72px;
+            text-align: center;
+            border-right: 1px solid var(--border);
+            padding-right: 10px;
+            margin-right: 14px;
+            flex-shrink: 0;
+        }
+
+        .day-card.today .date-box {
+            border-right-color: rgba(0, 168, 150, 0.25);
+        }
+
+        .dow {
+            font-size: 13px;
+            font-weight: 600;
+            text-transform: lowercase;
+            color: var(--text-muted);
+        }
+
+        .day-num {
+            font-size: 26px;
+            font-weight: 700;
+            line-height: 1.1;
+            margin: 2px 0;
+            color: var(--text-main);
+        }
+
+        .month-name {
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        /* Цвета текста для сегодня и выходных */
+        .day-card.today .dow,
+        .day-card.today .day-num,
+        .day-card.today .month-name {
+            color: var(--teal-dark);
+        }
+
+        .day-card.weekend:not(.today) .dow,
+        .day-card.weekend:not(.today) .day-num {
+            color: var(--red);
+        }
+
+        /* Центральный блок со статусом и прогрессом */
+        .status-box {
+            flex-grow: 1;
+            min-width: 0;
+        }
+
+        .status-title {
+            font-size: 15px;
+            font-weight: 600;
+            margin-bottom: 6px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .progress-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .counter-text {
+            font-size: 12px;
+            color: var(--text-muted);
+            font-weight: 600;
+            min-width: 28px;
+        }
+
+        .progress-track {
+            flex-grow: 1;
+            height: 6px;
+            background: #e2e8f0;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .progress-fill {
+            height: 100%;
+            border-radius: 4px;
+            transition: width 0.3s ease, background-color 0.3s ease;
+        }
+
+        /* Кнопка плюс справа */
+        .add-btn {
+            width: 38px;
+            height: 38px;
+            border-radius: 50%;
+            border: 1px solid #cbd5e1;
+            background: #f8fafc;
+            color: #475569;
+            font-size: 22px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-left: 12px;
+            flex-shrink: 0;
+            cursor: pointer;
+        }
+
+        .add-btn:active {
+            background: var(--teal);
+            color: white;
+            border-color: var(--teal);
+        }
+
+        /* Раскрывающийся список дел */
+        .tasks-list {
+            display: none;
+            padding: 8px 14px 14px 14px;
+            border-top: 1px solid var(--border);
+            background: rgba(255,255,255,0.6);
+        }
+
+        .day-card.expanded .tasks-list {
+            display: block;
+        }
+
+        .empty-tasks {
+            font-size: 13px;
+            color: var(--text-muted);
+            text-align: center;
+            padding: 8px 0;
+        }
+
+        .task-item {
+            display: flex;
+            align-items: center;
+            padding: 9px 6px;
+            border-bottom: 1px solid #f1f5f9;
+            gap: 10px;
+        }
+
+        .task-item:last-child {
+            border-bottom: none;
+        }
+
+        .task-check {
+            width: 22px;
+            height: 22px;
+            accent-color: var(--teal);
+            cursor: pointer;
+            flex-shrink: 0;
+        }
+
+        .task-info {
+            flex-grow: 1;
+            min-width: 0;
+            cursor: pointer;
+        }
+
+        .task-text {
+            font-size: 15px;
+            word-break: break-word;
+        }
+
+        .task-item.done .task-text {
+            text-decoration: line-through;
+            color: var(--text-muted);
+        }
+
+        .task-meta {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 3px;
+            font-size: 12px;
+            color: var(--teal-dark);
+        }
+
+        .badge-repeat {
+            background: var(--teal-light);
+            padding: 1px 6px;
+            border-radius: 4px;
+            font-weight: 500;
+        }
+
+        .del-task-btn {
+            background: none;
+            border: none;
+            color: #cbd5e1;
+            font-size: 18px;
+            padding: 4px 8px;
+            cursor: pointer;
+        }
+
+        .del-task-btn:hover {
+            color: var(--red);
+        }
+
+        /* Модальные окна */
+        .modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.45);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 200;
+            padding: 16px;
+        }
+
+        .modal-overlay.open {
+            display: flex;
+        }
+
+        .modal {
+            background: white;
+            width: 100%;
+            max-width: 400px;
+            border-radius: 16px;
+            padding: 20px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+        }
+
+        .modal h3 {
+            margin-bottom: 14px;
+            font-size: 18px;
+            color: var(--text-main);
+        }
+
+        .form-group {
+            margin-bottom: 14px;
+        }
+
+        .form-group label {
+            display: block;
+            font-size: 13px;
+            color: var(--text-muted);
+            margin-bottom: 5px;
+        }
+
+        .form-input {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid #cbd5e1;
+            border-radius: 10px;
+font-size: 15px;
+outline: none;
+}
+.form-input:focus {
+border-color: var(--teal);
+}
+.checkbox-row {
+display: flex;
+align-items: center;
+gap: 10px;
+cursor: pointer;
+font-size: 15px;
+padding: 4px 0;
+}
+.checkbox-row input {
+width: 18px;
+height: 18px;
+accent-color: var(--teal);
+}
+.modal-buttons {
+display: flex;
+justify-content: flex-end;
+gap: 10px;
+margin-top: 18px;
+}
+.btn {
+padding: 10px 16px;
+border-radius: 10px;
+border: none;
+font-size: 14px;
+font-weight: 600;
+cursor: pointer;
+}
+.btn-cancel {
+background: #f1f5f9;
+color: #475569;
+}
+.btn-primary {
+background: var(--teal);
+color: white;
+}
+.help-text {
+font-size: 12px;
+color: #64748b;
+line-height: 1.4;
+margin-top: 6px;
+}
+
+
+◀
+Текущая неделя
+▶
+
+
+📅
+
+⚙️
+
+
+
+Новое дело
+Название дела
+Время (необязательно)
+Отмена
+Добавить
+
+
+Синхронизация семьи
+OAuth-токен Яндекс Диска
+Чтобы дела обновлялись у всей семьи, получите бесплатный токен на yandex.ru/dev/disk/poligon (под общей почтой) и вставьте его на всех телефонах.
+Закрыть
+Сохранить
+
+
+// Состояние приложения
+let weekOffset = 0; // 0 = текущая неделя
+let expandedDates = new Set(); // какие карточки раскрыты
+let selectedDateStr = ''; // дата для добавления дела
+// Хранилище данных:
+// tasks: [{ id, title, time, repeat, dow (0-6, где 0=Пн), dateStr ('YYYY-MM-DD') }]
+// completed: { 'taskId_YYYY-MM-DD': true }
+let appData = {
+updatedAt: 0,
+tasks: [],
+completed: {}
+};
+const MONTHS_GEN = ['Января', 'Февраля', 'Марта', 'Апреля', 'Мая', 'Июня', 'Июля', 'Августа', 'Сентября', 'Октября', 'Ноября', 'Декабря'];
+const DAYS_SHORT = ['пн', 'вт', 'ср', 'чт', 'пт', 'сб', 'вс'];
+const YD_FILE_PATH = 'app:/family_planner_data.json';
+// Инициализация
+function init() {
+const local = localStorage.getItem('family_planner_v1');
+if (local) {
+try { appData = JSON.parse(local); } catch (e) {}
+}
+// По умолчанию раскрываем сегодняшний день
+const todayStr = formatDateISO(new Date());
+expandedDates.add(todayStr);
+renderWeek();
+updateSyncDot();
+// Первичная синхронизация и фоновый опрос каждые 15 секунд
+pullFromYandexDisk();
+setInterval(pullFromYandexDisk, 15000);
+}
+// Работа с датами
+function getMonday(offsetWeeks = 0) {
+const now = new Date();
+const day = now.getDay(); // 0 (Вс) .. 6 (Сб)
+const diff = (day === 0 ? -6 : 1) - day + (offsetWeeks * 7);
+const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate() + diff);
+return monday;
+}
+function formatDateISO(date) {
+const y = date.getFullYear();
+const m = String(date.getMonth() + 1).padStart(2, '0');
+const d = String(date.getDate()).padStart(2, '0');
+return ${y}-${m}-${d};
+}
+function changeWeek(delta) {
+weekOffset += delta;
+renderWeek();
+}
+function goToday() {
+weekOffset = 0;
+expandedDates.add(formatDateISO(new Date()));
+renderWeek();
+}
+// Отрисовка недели
+function renderWeek() {
+const container = document.getElementById('daysContainer');
+container.innerHTML = '';
+const monday = getMonday(weekOffset);
+const sunday = new Date(monday);
+sunday.setDate(monday.getDate() + 6);
+// Заголовок недели в шапке
+if (weekOffset === 0) {
+document.getElementById('weekTitle').textContent = 'Текущая неделя';
+} else {
+document.getElementById('weekTitle').textContent = ${monday.getDate()} ${MONTHS_GEN[monday.getMonth()].slice(0,3)} — ${sunday.getDate()} ${MONTHS_GEN[sunday.getMonth()].slice(0,3)};
+}
+const todayISO = formatDateISO(new Date());
+for (let i = 0; i < 7; i++) {
+const current = new Date(monday);
+current.setDate(monday.getDate() + i);
+const dateISO = formatDateISO(current);
+const isToday = (dateISO === todayISO);
+const isWeekend = (i === 5 || i === 6);
+// Фильтруем дела для этого дня:
+// 1) Разовые именно на эту дату
+// 2) Повторяющиеся на этот день недели (при условии, что текущая дата >= даты создания задачи)
+const dayTasks = appData.tasks.filter(t => {
+if (t.repeat) {
+return t.dow === i && dateISO >= t.dateStr;
+} else {
+return t.dateStr === dateISO;
+}
+});
+// Сортируем по времени (дела со временем выше, затем без времени)
+dayTasks.sort((a, b) => {
+if (a.time && b.time) return a.time.localeCompare(b.time);
+if (a.time) return -1;
+if (b.time) return 1;
+return 0;
+});
+const total = dayTasks.length;
+let doneCount = 0;
+dayTasks.forEach(t => {
+if (appData.completed[${t.id}_${dateISO}]) doneCount++;
+});
+// Текст статуса и цвет полоски
+let statusText = 'Нет дел';
+let barColor = '#cbd5e1';
+let percent = 0;
+if (total > 0) {
+percent = Math.round((doneCount / total) * 100);
+if (doneCount === total) {
+statusText = 'Дела решены';
+barColor = '#00a896'; // Бирюзовый
+} else if (isToday) {
+const left = total - doneCount;
+statusText = ${left} ${pluralizeTasks(left)};
+barColor = '#e63946'; // Красный акцент на сегодня
+} else {
+statusText = ${total} ${pluralizeAll(total)};
+barColor = doneCount > 0 ? '#f4a261' : '#e63946';
+}
+}
+const card = document.createElement('div');
+card.className = day-card ${isToday ? 'today' : ''} ${isWeekend ? 'weekend' : ''} ${expandedDates.has(dateISO) ? 'expanded' : ''};
+let tasksHtml = '';
+if (dayTasks.length === 0) {
+tasksHtml = <div class="empty-tasks">Задач на этот день пока нет</div>;
+} else {
+tasksHtml = (t => {
+const isDone = !!appData.completed[${t.id}_${dateISO}];
+return <div class="task-item ${isDone ? 'done' : ''}"> <input type="checkbox" class="task-check" ${isDone ? 'checked' : ''} onchange="toggleTask('${t.id}', '${dateISO}')"> <div class="task-info" onclick="toggleTask('${t.id}', '${dateISO}')"> <div class="task-text">${escapeHtml(t.title)}</div> ${(t.time || t.repeat) ?
+
+${t.time ? <span>🕒 ${t.time}</span> : ''}
+${t.repeat ? <span class="badge-repeat">↻ каждую неделю</span> : ''}
+
+: ''} </div> <button class="del-task-btn" onclick="deleteTask('${t.id}')" title="Удалить дело">✕</button> </div>;
+}).join('');
+}
+card.innerHTML = <div class="day-main" onclick="toggleDayExpand('${dateISO}')"> <div class="date-box"> <div class="dow">${DAYS_SHORT[i]}</div> <div class="day-num">${current.getDate()}</div> <div class="month-name">${MONTHS_GEN[current.getMonth()]}</div> </div> <div class="status-box"> <div class="status-title">${statusText}</div> <div class="progress-row"> <span class="counter-text">${doneCount}/${total}</span> <div class="progress-track"> <div class="progress-fill" style="width: ${percent}%; background-color: ${barColor};"></div> </div> </div> </div> <button class="add-btn" onclick="openAddModal(event, '${dateISO}', '${current.getDate()} ${MONTHS_GEN[current.getMonth()]}')">+</button> </div> <div class="tasks-list"> ${tasksHtml} </div>;
+container.appendChild(card);
+}
+}
+function pluralizeTasks(n) {
+if (n % 10 === 1 && n % 100 !== 11) return 'нерешённое дело';
+if ([2,3,4].includes(n % 10) && ![12,13,14].includes(n % 100)) return 'нерешённых дела';
+return 'нерешённых дел';
+}
+function pluralizeAll(n) {
+if (n % 10 === 1 && n % 100 !== 11) return 'дело';
+if ([2,3,4].includes(n % 10) && ![12,13,14].includes(n % 100)) return 'дела';
+return 'дел';
+}
+function escapeHtml(str) {
+return str.replace(/[&<>"']/g, m => ({'&':'&','<':'<','>':'>','"':'"',"'":'''}[m]));
+}
+// Действия пользователя
+function toggleDayExpand(dateISO) {
+if (expandedDates.has(dateISO)) {
+expandedDates.delete(dateISO);
+} else {
+expandedDates.add(dateISO);
+}
+renderWeek();
+}
+function openAddModal(event, dateISO, readableDate) {
+event.stopPropagation();
+selectedDateStr = dateISO;
+document.getElementById('modalDateTitle').textContent = Дело на ${readableDate};
+document.getElementById('taskTitleInput').value = '';
+document.getElementById('taskTimeInput').value = '';
+document.getElementById('taskRepeatInput').checked = false;
+document.getElementById('addModal').classList.add('open');
+setTimeout(() => document.getElementById('taskTitleInput').focus(), 100);
+}
+function closeModal(id) {
+document.getElementById(id).classList.remove('open');
+}
+function saveNewTask() {
+const title = document.getElementById('taskTitleInput').value.trim();
+if (!title) return;
+const time = document.getElementById('taskTimeInput').value;
+const repeat = document.getElementById('taskRepeatInput').checked;
+const parts = selectedDateStr.split('-');
+const dObj = new Date(parts[0], parts[1] - 1, parts[2]);
+const jsDay = dObj.getDay();
+const dow = jsDay === 0 ? 6 : jsDay - 1; // 0 = Пн .. 6 = Вс
+appData.tasks.push({
+id: 't_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
+title,
+time,
+repeat,
+dow,
+dateStr: selectedDateStr
+});
+expandedDates.add(selectedDateStr);
+closeModal('addModal');
+saveAndSync();
+}
+function toggleTask(taskId, dateISO) {
+const key = ${taskId}_${dateISO};
+if (appData.completed[key]) {
+delete appData.completed[key];
+} else {
+appData.completed[key] = true;
+}
+saveAndSync();
+}
+function deleteTask(taskId) {
+if (!confirm('Удалить это дело? (Если оно повторяющееся, оно удалится со всех недель)')) return;
+appData.tasks = appData.tasks.filter(t =>  !== taskId);
+saveAndSync();
+}
+function saveAndSync() {
+appData.updatedAt = ();
+localStorage.setItem('family_planner_v1', JSON.stringify(appData));
+renderWeek();
+pushToYandexDisk();
+}
+// Настройки и синхронизация с Яндекс Диском
+function openSettings() {
+document.getElementById('ydTokenInput').value = localStorage.getItem('yd_oauth_token') || '';
+document.getElementById('settingsModal').classList.add('open');
+}
+function saveSettings() {
+const token = document.getElementById('ydTokenInput').value.trim();
+localStorage.setItem('yd_oauth_token', token);
+closeModal('settingsModal');
+updateSyncDot();
+if (token) pullFromYandexDisk();
+}
+function updateSyncDot(state = 'idle') {
+const dot = document.getElementById('syncDot');
+const token = localStorage.getItem('yd_oauth_token');
+dot.className = 'sync-dot';
+if (state === 'syncing') dot.classList.add('syncing');
+else if (token) dot.classList.add('connected');
+}
+async function pullFromYandexDisk() {
+const token = localStorage.getItem('yd_oauth_token');
+if (!token) return;
+try {
+updateSyncDot('syncing');
+const res = await fetch(https://yandex.net{encodeURIComponent(YD_FILE_PATH)}, {
+headers: { 'Authorization': OAuth ${token} }
+});
+if (res.status === 404) {
+// Файла еще нет на диске — создадим его из текущих данных
+await pushToYandexDisk();
+return;
+}
+if (!res.ok) throw new Error('Ошибка чтения');
+const { href } = await res.json();
+const fileRes = await fetch(href);
+const cloudData = await fileRes.json();
+if (cloudData && cloudData.updatedAt > appData.updatedAt) {
+appData = cloudData;
+localStorage.setItem('family_planner_v1', JSON.stringify(appData));
+renderWeek();
+}
+} catch (e) {
+console.warn('Ошибка синхронизации (чтение):', e);
+} finally {
+updateSyncDot('idle');
+}
+}
+async function pushToYandexDisk() {
+const token = localStorage.getItem('yd_oauth_token');
+if (!token) return;
+try {
+updateSyncDot('syncing');
+const res = await fetch(https://yandex.net{encodeURIComponent(YD_FILE_PATH)}&overwrite=true, {
+headers: { 'Authorization': OAuth ${token} }
+});
+if (!res.ok) throw new Error('Ошибка получения ссылки загрузки');
+const { href } = await res.json();
+await fetch(href, {
+method: 'PUT',
+body: JSON.stringify(appData)
+});
+} catch (e) {
+console.warn('Ошибка синхронизации (запись):', e);
+} finally {
+updateSyncDot('idle');
+}
+}
+init();
