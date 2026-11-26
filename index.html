@@ -400,331 +400,457 @@
             align-items: center;
             gap: 10px;
             cursor: pointer;
-font-size: 15px;
-padding: 4px 0;
-}
-.checkbox-row input {
-width: 18px;
-height: 18px;
-accent-color: var(--teal);
-}
-.modal-buttons {
-display: flex;
-justify-content: flex-end;
-gap: 10px;
-margin-top: 18px;
-}
-.btn {
-padding: 10px 16px;
-border-radius: 10px;
-border: none;
-font-size: 14px;
-font-weight: 600;
-cursor: pointer;
-}
-.btn-cancel {
-background: #f1f5f9;
-color: #475569;
-}
-.btn-primary {
-background: var(--teal);
-color: white;
-}
-.help-text {
-font-size: 12px;
-color: #64748b;
-line-height: 1.4;
-margin-top: 6px;
-}
+            font-size: 15px;
+            padding: 4px 0;
+        }
 
+        .checkbox-row input {
+            width: 18px;
+            height: 18px;
+            accent-color: var(--teal);
+        }
 
-◀
-Текущая неделя
-▶
+        .modal-buttons {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+            margin-top: 18px;
+        }
 
+        .btn {
+            padding: 10px 16px;
+            border-radius: 10px;
+            border: none;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+        }
 
-📅
+        .btn-cancel {
+            background: #f1f5f9;
+            color: #475569;
+        }
 
-⚙️
+        .btn-primary {
+            background: var(--teal);
+            color: white;
+        }
 
+        .help-text {
+            font-size: 12px;
+            color: #64748b;
+            line-height: 1.4;
+            margin-top: 6px;
+        }
+    </style>
+</head>
+<body>
 
+    <header class="header">
+        <div class="week-nav">
+            <button class="nav-btn" onclick="changeWeek(-1)" aria-label="Предыдущая неделя">◀</button>
+            <div class="week-title" id="weekTitle">Текущая неделя</div>
+            <button class="nav-btn" onclick="changeWeek(1)" aria-label="Следующая неделя">▶</button>
+        </div>
+        <div class="header-actions">
+            <button class="icon-btn" onclick="goToday()" title="К текущей неделе">📅</button>
+            <button class="icon-btn" onclick="openSettings()" title="Синхронизация">
+                ⚙️
+                <span class="sync-dot" id="syncDot"></span>
+            </button>
+        </div>
+    </header>
 
-Новое дело
-Название дела
-Время (необязательно)
-Отмена
-Добавить
+    <!-- Основной контейнер для карточек дней недели -->
+    <main id="daysContainer" class="days-container"></main>
 
+    <!-- Модальное окно добавления дела -->
+    <div class="modal-overlay" id="addModal">
+        <div class="modal">
+            <h3 id="modalDateTitle">Новое дело</h3>
+            <div class="form-group">
+                <label for="taskTitleInput">Название дела</label>
+                <input type="text" id="taskTitleInput" class="form-input" placeholder="Например: Позвонить бабушке">
+            </div>
+            <div class="form-group">
+                <label for="taskTimeInput">Время (необязательно)</label>
+                <input type="time" id="taskTimeInput" class="form-input">
+            </div>
+            <label class="checkbox-row">
+                <input type="checkbox" id="taskRepeatInput">
+                Повторять каждую неделю в этот день
+            </label>
+            <div class="modal-buttons">
+                <button class="btn btn-cancel" onclick="closeModal('addModal')">Отмена</button>
+                <button class="btn btn-primary" onclick="saveNewTask()">Добавить</button>
+            </div>
+        </div>
+    </div>
 
-Синхронизация семьи
-OAuth-токен Яндекс Диска
-Чтобы дела обновлялись у всей семьи, получите бесплатный токен на yandex.ru/dev/disk/poligon (под общей почтой) и вставьте его на всех телефонах.
-Закрыть
-Сохранить
+    <!-- Модальное окно настроек синхронизации -->
+    <div class="modal-overlay" id="settingsModal">
+        <div class="modal">
+            <h3>Синхронизация семьи</h3>
+            <div class="form-group">
+                <label for="ydTokenInput">OAuth-токен Яндекс Диска</label>
+                <input type="text" id="ydTokenInput" class="form-input" placeholder="Вставьте токен сюда">
+                <p class="help-text">
+                    Чтобы дела обновлялись у всей семьи, получите бесплатный токен на
+                    yandex.ru/dev/disk/poligon (под общей почтой) и вставьте его на всех телефонах.
+                </p>
+            </div>
+            <div class="modal-buttons">
+                <button class="btn btn-cancel" onclick="closeModal('settingsModal')">Закрыть</button>
+                <button class="btn btn-primary" onclick="saveSettings()">Сохранить</button>
+            </div>
+        </div>
+    </div>
 
+    <script>
+        let weekOffset = 0;
+        let expandedDates = new Set();
+        let selectedDateStr = '';
+        let appData = {
+            updatedAt: 0,
+            tasks: [],
+            completed: {}
+        };
 
-let weekOffset = 0;
-let expandedDates = new Set();
-let selectedDateStr = '';
-let appData = {
-updatedAt: 0,
-tasks: [],
-completed: {}
-};
-const MONTHS_GEN = ['Января', 'Февраля', 'Марта', 'Апреля', 'Мая', 'Июня', 'Июля', 'Августа', 'Сентября', 'Октября', 'Ноября', 'Декабря'];
-const DAYS_SHORT = ['пн', 'вт', 'ср', 'чт', 'пт', 'сб', 'вс'];
-const YD_FILE_PATH = 'app:/family_planner_data.json';
-function init() {
-const local = localStorage.getItem('family_planner_v1');
-if (local) {
-try { appData = JSON.parse(local); } catch (e) {}
-}
-const todayStr = formatDateISO(new Date());
-expandedDates.add(todayStr);
-renderWeek();
-updateSyncDot();
-pullFromYandexDisk();
-setInterval(pullFromYandexDisk, 15000);
-}
-function getMonday(offsetWeeks = 0) {
-const now = new Date();
-const day = now.getDay();
-const diff = (day === 0 ? -6 : 1) - day + (offsetWeeks * 7);
-return new Date(now.getFullYear(), now.getMonth(), now.getDate() + diff);
-}
-function formatDateISO(date) {
-const y = date.getFullYear();
-const m = String(date.getMonth() + 1).padStart(2, '0');
-const d = String(date.getDate()).padStart(2, '0');
-return ${y}-${m}-${d};
-}
-function changeWeek(delta) {
-weekOffset += delta;
-renderWeek();
-}
-function goToday() {
-weekOffset = 0;
-expandedDates.add(formatDateISO(new Date()));
-renderWeek();
-}
-function renderWeek() {
-const container = document.getElementById('daysContainer');
-if (!container) return;
-container.innerHTML = '';
-const monday = getMonday(weekOffset);
-const sunday = new Date(monday);
-sunday.setDate(monday.getDate() + 6);
-if (weekOffset === 0) {
-document.getElementById('weekTitle').textContent = 'Текущая неделя';
-} else {
-document.getElementById('weekTitle').textContent = ${monday.getDate()} ${MONTHS_GEN[monday.getMonth()].slice(0,3)} — ${sunday.getDate()} ${MONTHS_GEN[sunday.getMonth()].slice(0,3)};
-}
-const todayISO = formatDateISO(new Date());
-for (let i = 0; i < 7; i++) {
-const current = new Date(monday);
-current.setDate(monday.getDate() + i);
-const dateISO = formatDateISO(current);
-const isToday = (dateISO === todayISO);
-const isWeekend = (i === 5 || i === 6);
-const dayTasks = appData.tasks.filter(t => {
-if (t.repeat) {
-return t.dow === i && dateISO >= t.dateStr;
-} else {
-return t.dateStr === dateISO;
-}
-});
-dayTasks.sort((a, b) => {
-if (a.time && b.time) return a.time.localeCompare(b.time);
-if (a.time) return -1;
-if (b.time) return 1;
-return 0;
-});
-const total = dayTasks.length;
-let doneCount = 0;
-dayTasks.forEach(t => {
-if (appData.completed[${t.id}_${dateISO}]) doneCount++;
-});
-let statusText = 'Нет дел';
-let barColor = '#cbd5e1';
-let percent = 0;
-if (total > 0) {
-percent = Math.round((doneCount / total) * 100);
-if (doneCount === total) {
-statusText = 'Дела решены';
-barColor = '#00a896';
-} else if (isToday) {
-const left = total - doneCount;
-statusText = ${left} ${pluralizeTasks(left)};
-barColor = '#e63946';
-} else {
-statusText = ${total} ${pluralizeAll(total)};
-barColor = doneCount > 0 ? '#f4a261' : '#e63946';
-}
-}
-const card = document.createElement('div');
-card.className = day-card ${isToday ? 'today' : ''} ${isWeekend ? 'weekend' : ''} ${expandedDates.has(dateISO) ? 'expanded' : ''};
-let tasksHtml = '';
-if (dayTasks.length === 0) {
-tasksHtml = <div class="empty-tasks">Задач на этот день пока нет</div>;
-} else {
-tasksHtml = dayTasks.map(t => {
-const isDone = !!appData.completed[${t.id}_${dateISO}];
-return <div class="task-item ${isDone ? 'done' : ''}"> <input type="checkbox" class="task-check" ${isDone ? 'checked' : ''} onchange="toggleTask('${t.id}', '${dateISO}')"> <div class="task-info" onclick="toggleTask('${t.id}', '${dateISO}')"> <div class="task-text">${escapeHtml(t.title)}</div> ${(t.time || t.repeat) ?
+        const MONTHS_GEN = ['Января', 'Февраля', 'Марта', 'Апреля', 'Мая', 'Июня', 'Июля', 'Августа', 'Сентября', 'Октября', 'Ноября', 'Декабря'];
+        const DAYS_SHORT = ['пн', 'вт', 'ср', 'чт', 'пт', 'сб', 'вс'];
+        const YD_FILE_PATH = 'app:/family_planner_data.json';
 
-${t.time ? <span>🕒 ${t.time}</span> : ''}
-${t.repeat ? <span class="badge-repeat">↻ каждую неделю</span> : ''}
+        function init() {
+            const local = localStorage.getItem('family_planner_v1');
+            if (local) {
+                try { appData = JSON.parse(local); } catch (e) {}
+            }
+            const todayStr = formatDateISO(new Date());
+            expandedDates.add(todayStr);
+            renderWeek();
+            updateSyncDot();
+            pullFromYandexDisk();
+            setInterval(pullFromYandexDisk, 15000);
+        }
 
-: ''} </div> <button class="del-task-btn" onclick="deleteTask('${t.id}')" title="Удалить дело">✕</button> </div>;
-}).join('');
-}
-card.innerHTML = <div class="day-main" onclick="toggleDayExpand('${dateISO}')"> <div class="date-box"> <div class="dow">${DAYS_SHORT[i]}</div> <div class="day-num">${current.getDate()}</div> <div class="month-name">${MONTHS_GEN[current.getMonth()]}</div> </div> <div class="status-box"> <div class="status-title">${statusText}</div> <div class="progress-row"> <span class="counter-text">${doneCount}/${total}</span> <div class="progress-track"> <div class="progress-fill" style="width: ${percent}%; background-color: ${barColor};"></div> </div> </div> </div> <button class="add-btn" onclick="openAddModal(event, '${dateISO}', '${current.getDate()} ${MONTHS_GEN[current.getMonth()]}')">+</button> </div> <div class="tasks-list"> ${tasksHtml} </div>;
-container.appendChild(card);
-}
-}
-function pluralizeTasks(n) {
-const mod10 = n % 10;
-const mod100 = n % 100;
-if (mod10 === 1 && mod100 !== 11) return 'нерешённое дело';
-if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return 'нерешённых дела';
-return 'нерешённых дел';
-}
-function pluralizeAll(n) {
-const mod10 = n % 10;
-const mod100 = n % 100;
-if (mod10 === 1 && mod100 !== 11) return 'дело';
-if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return 'дела';
-return 'дел';
-}
-function escapeHtml(str) {
-return str.replace(/[&<>"']/g, m => ({'&':'&','<':'<','>':'>','"':'"',"'":'''}[m]));
-}
-function toggleDayExpand(dateISO) {
-if (expandedDates.has(dateISO)) {
-expandedDates.delete(dateISO);
-} else {
-expandedDates.add(dateISO);
-}
-renderWeek();
-}
-function openAddModal(event, dateISO, readableDate) {
-event.stopPropagation();
-selectedDateStr = dateISO;
-document.getElementById('modalDateTitle').textContent = Дело на ${readableDate};
-document.getElementById('taskTitleInput').value = '';
-document.getElementById('taskTimeInput').value = '';
-document.getElementById('taskRepeatInput').checked = false;
-document.getElementById('addModal').classList.add('open');
-setTimeout(() => document.getElementById('taskTitleInput').focus(), 100);
-}
-function closeModal(id) {
-document.getElementById(id).classList.remove('open');
-}
-function saveNewTask() {
-const title = document.getElementById('taskTitleInput').value.trim();
-if (!title) return;
-const time = document.getElementById('taskTimeInput').value;
-const repeat = document.getElementById('taskRepeatInput').checked;
-const parts = selectedDateStr.split('-').map(Number);
-const dObj = new Date(parts[0], parts[1] - 1, parts[2]);
-const jsDay = dObj.getDay();
-const dow = jsDay === 0 ? 6 : jsDay - 1;
-appData.tasks.push({
-id: 't_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
-title,
-time,
-repeat,
-dow,
-dateStr: selectedDateStr
-});
-expandedDates.add(selectedDateStr);
-closeModal('addModal');
-saveAndSync();
-}
-function toggleTask(taskId, dateISO) {
-const key = ${taskId}_${dateISO};
-if (appData.completed[key]) {
-delete appData.completed[key];
-} else {
-appData.completed[key] = true;
-}
-saveAndSync();
-}
-function deleteTask(taskId) {
-if (!confirm('Удалить это дело? (Если оно повторяющееся, оно удалится со всех недель)')) return;
-appData.tasks = appData.tasks.filter(t => t.id !== taskId);
-saveAndSync();
-}
-function saveAndSync() {
-appData.updatedAt = Date.now();
-localStorage.setItem('family_planner_v1', JSON.stringify(appData));
-renderWeek();
-pushToYandexDisk();
-}
-function openSettings() {
-document.getElementById('ydTokenInput').value = localStorage.getItem('yd_oauth_token') || '';
-document.getElementById('settingsModal').classList.add('open');
-}
-function saveSettings() {
-const token = document.getElementById('ydTokenInput').value.trim();
-localStorage.setItem('yd_oauth_token', token);
-closeModal('settingsModal');
-updateSyncDot();
-if (token) pullFromYandexDisk();
-}
-function updateSyncDot(state = 'idle') {
-const dot = document.getElementById('syncDot');
-const token = localStorage.getItem('yd_oauth_token');
-dot.className = 'sync-dot';
-if (state === 'syncing') dot.classList.add('syncing');
-else if (token) dot.classList.add('connected');
-}
-async function pullFromYandexDisk() {
-const token = localStorage.getItem('yd_oauth_token');
-if (!token) return;
-try {
-updateSyncDot('syncing');
-const res = await fetch(https://yandex.net{encodeURIComponent(YD_FILE_PATH)}, {
-headers: { 'Authorization': OAuth ${token} }
-});
-if (res.status === 404) {
-await pushToYandexDisk();
-return;
-}
-if (!res.ok) throw new Error('Ошибка чтения');
-const { href } = await res.json();
-const fileRes = await fetch(href);
-const cloudData = await fileRes.json();
-if (cloudData && cloudData.updatedAt > appData.updatedAt) {
-appData = cloudData;
-localStorage.setItem('family_planner_v1', JSON.stringify(appData));
-renderWeek();
-}
-} catch (e) {
-console.warn('Ошибка синхронизации (чтение):', e);
-} finally {
-updateSyncDot('idle');
-}
-}
-async function pushToYandexDisk() {
-const token = localStorage.getItem('yd_oauth_token');
-if (!token) return;
-try {
-updateSyncDot('syncing');
-const res = await fetch(https://yandex.net{encodeURIComponent(YD_FILE_PATH)}&overwrite=true, {
-headers: { 'Authorization': OAuth ${token} }
-});
-if (!res.ok) throw new Error('Ошибка получения ссылки загрузки');
-const { href } = await res.json();
-await fetch(href, {
-method: 'PUT',
-body: JSON.stringify(appData)
-});
-} catch (e) {
-console.warn('Ошибка синхронизации (запись):', e);
-} finally {
-updateSyncDot('idle');
-}
-}
-init();
+        function getMonday(offsetWeeks = 0) {
+            const now = new Date();
+            const day = now.getDay();
+            const diff = (day === 0 ? -6 : 1) - day + (offsetWeeks * 7);
+            return new Date(now.getFullYear(), now.getMonth(), now.getDate() + diff);
+        }
 
+        function formatDateISO(date) {
+            const y = date.getFullYear();
+            const m = String(date.getMonth() + 1).padStart(2, '0');
+            const d = String(date.getDate()).padStart(2, '0');
+            return `${y}-${m}-${d}`;
+        }
 
+        function changeWeek(delta) {
+            weekOffset += delta;
+            renderWeek();
+        }
+
+        function goToday() {
+            weekOffset = 0;
+            expandedDates.add(formatDateISO(new Date()));
+            renderWeek();
+        }
+
+        function renderWeek() {
+            const container = document.getElementById('daysContainer');
+            if (!container) return;
+            container.innerHTML = '';
+
+            const monday = getMonday(weekOffset);
+            const sunday = new Date(monday);
+            sunday.setDate(monday.getDate() + 6);
+
+            if (weekOffset === 0) {
+                document.getElementById('weekTitle').textContent = 'Текущая неделя';
+            } else {
+                document.getElementById('weekTitle').textContent =
+                    `${monday.getDate()} ${MONTHS_GEN[monday.getMonth()].slice(0, 3)} — ${sunday.getDate()} ${MONTHS_GEN[sunday.getMonth()].slice(0, 3)}`;
+            }
+
+            const todayISO = formatDateISO(new Date());
+
+            for (let i = 0; i < 7; i++) {
+                const current = new Date(monday);
+                current.setDate(monday.getDate() + i);
+                const dateISO = formatDateISO(current);
+                const isToday = (dateISO === todayISO);
+                const isWeekend = (i === 5 || i === 6);
+
+                const dayTasks = appData.tasks.filter(t => {
+                    if (t.repeat) {
+                        return t.dow === i && dateISO >= t.dateStr;
+                    }
+                    return t.dateStr === dateISO;
+                });
+
+                dayTasks.sort((a, b) => {
+                    if (a.time && b.time) return a.time.localeCompare(b.time);
+                    if (a.time) return -1;
+                    if (b.time) return 1;
+                    return 0;
+                });
+
+                const total = dayTasks.length;
+                let doneCount = 0;
+                dayTasks.forEach(t => {
+                    if (appData.completed[`${t.id}_${dateISO}`]) doneCount++;
+                });
+
+                let statusText = 'Нет дел';
+                let barColor = '#cbd5e1';
+                let percent = 0;
+                if (total > 0) {
+                    percent = Math.round((doneCount / total) * 100);
+                    if (doneCount === total) {
+                        statusText = 'Дела решены';
+                        barColor = '#00a896';
+                    } else if (isToday) {
+                        const left = total - doneCount;
+                        statusText = `${left} ${pluralizeTasks(left)}`;
+                        barColor = '#e63946';
+                    } else {
+                        statusText = `${total} ${pluralizeAll(total)}`;
+                        barColor = doneCount > 0 ? '#f4a261' : '#e63946';
+                    }
+                }
+
+                const card = document.createElement('div');
+                card.className = `day-card ${isToday ? 'today' : ''} ${isWeekend ? 'weekend' : ''} ${expandedDates.has(dateISO) ? 'expanded' : ''}`;
+
+                let tasksHtml = '';
+                if (dayTasks.length === 0) {
+                    tasksHtml = '<div class="empty-tasks">Задач на этот день пока нет</div>';
+                } else {
+                    tasksHtml = dayTasks.map(t => {
+                        const isDone = !!appData.completed[`${t.id}_${dateISO}`];
+                        return `
+                            <div class="task-item ${isDone ? 'done' : ''}">
+                                <input type="checkbox" class="task-check" ${isDone ? 'checked' : ''} onchange="toggleTask('${t.id}', '${dateISO}')">
+                                <div class="task-info" onclick="toggleTask('${t.id}', '${dateISO}')">
+                                    <div class="task-text">${escapeHtml(t.title)}</div>
+                                    ${(t.time || t.repeat) ? `
+                                        <div class="task-meta">
+                                            ${t.time ? `<span>🕒 ${t.time}</span>` : ''}
+                                            ${t.repeat ? '<span class="badge-repeat">↻ каждую неделю</span>' : ''}
+                                        </div>
+                                    ` : ''}
+                                </div>
+                                <button class="del-task-btn" onclick="deleteTask('${t.id}')" title="Удалить дело">✕</button>
+                            </div>
+                        `;
+                    }).join('');
+                }
+
+                card.innerHTML = `
+                    <div class="day-main" onclick="toggleDayExpand('${dateISO}')">
+                        <div class="date-box">
+                            <div class="dow">${DAYS_SHORT[i]}</div>
+                            <div class="day-num">${current.getDate()}</div>
+                            <div class="month-name">${MONTHS_GEN[current.getMonth()]}</div>
+                        </div>
+                        <div class="status-box">
+                            <div class="status-title">${statusText}</div>
+                            <div class="progress-row">
+                                <span class="counter-text">${doneCount}/${total}</span>
+                                <div class="progress-track">
+                                    <div class="progress-fill" style="width: ${percent}%; background-color: ${barColor};"></div>
+                                </div>
+                            </div>
+                        </div>
+                        <button class="add-btn" onclick="openAddModal(event, '${dateISO}', '${current.getDate()} ${MONTHS_GEN[current.getMonth()]}')">+</button>
+                    </div>
+                    <div class="tasks-list">
+                        ${tasksHtml}
+                    </div>
+                `;
+                container.appendChild(card);
+            }
+        }
+
+        function pluralizeTasks(n) {
+            const mod10 = n % 10;
+            const mod100 = n % 100;
+            if (mod10 === 1 && mod100 !== 11) return 'нерешённое дело';
+            if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return 'нерешённых дела';
+            return 'нерешённых дел';
+        }
+
+        function pluralizeAll(n) {
+            const mod10 = n % 10;
+            const mod100 = n % 100;
+            if (mod10 === 1 && mod100 !== 11) return 'дело';
+            if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return 'дела';
+            return 'дел';
+        }
+
+        function escapeHtml(str) {
+            return String(str).replace(/[&<>"']/g, m => ({
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#39;'
+            }[m]));
+        }
+
+        function toggleDayExpand(dateISO) {
+            if (expandedDates.has(dateISO)) {
+                expandedDates.delete(dateISO);
+            } else {
+                expandedDates.add(dateISO);
+            }
+            renderWeek();
+        }
+
+        function openAddModal(event, dateISO, readableDate) {
+            if (event) event.stopPropagation();
+            selectedDateStr = dateISO;
+            document.getElementById('modalDateTitle').textContent = `Дело на ${readableDate}`;
+            document.getElementById('taskTitleInput').value = '';
+            document.getElementById('taskTimeInput').value = '';
+            document.getElementById('taskRepeatInput').checked = false;
+            document.getElementById('addModal').classList.add('open');
+            setTimeout(() => document.getElementById('taskTitleInput').focus(), 100);
+        }
+
+        function closeModal(id) {
+            document.getElementById(id).classList.remove('open');
+        }
+
+        function saveNewTask() {
+            const title = document.getElementById('taskTitleInput').value.trim();
+            if (!title) return;
+
+            const time = document.getElementById('taskTimeInput').value;
+            const repeat = document.getElementById('taskRepeatInput').checked;
+
+            // Исправление: правильно разбираем YYYY-MM-DD на числа
+            const [y, m, d] = selectedDateStr.split('-').map(Number);
+            const dObj = new Date(y, m - 1, d);
+            const jsDay = dObj.getDay();
+            const dow = jsDay === 0 ? 6 : jsDay - 1;
+
+            appData.tasks.push({
+                id: 't_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+                title,
+                time,
+                repeat,
+                dow,
+                dateStr: selectedDateStr
+            });
+
+            expandedDates.add(selectedDateStr);
+            closeModal('addModal');
+            saveAndSync();
+        }
+
+        function toggleTask(taskId, dateISO) {
+            const key = `${taskId}_${dateISO}`;
+            if (appData.completed[key]) {
+                delete appData.completed[key];
+            } else {
+                appData.completed[key] = true;
+            }
+            saveAndSync();
+        }
+
+        function deleteTask(taskId) {
+            if (!confirm('Удалить это дело? (Если оно повторяющееся, оно удалится со всех недель)')) return;
+            appData.tasks = appData.tasks.filter(t => t.id !== taskId);
+            saveAndSync();
+        }
+
+        function saveAndSync() {
+            appData.updatedAt = Date.now();
+            localStorage.setItem('family_planner_v1', JSON.stringify(appData));
+            renderWeek();
+            pushToYandexDisk();
+        }
+
+        function openSettings() {
+            document.getElementById('ydTokenInput').value = localStorage.getItem('yd_oauth_token') || '';
+            document.getElementById('settingsModal').classList.add('open');
+        }
+
+        function saveSettings() {
+            const token = document.getElementById('ydTokenInput').value.trim();
+            localStorage.setItem('yd_oauth_token', token);
+            closeModal('settingsModal');
+            updateSyncDot();
+            if (token) pullFromYandexDisk();
+        }
+
+        function updateSyncDot(state = 'idle') {
+            const dot = document.getElementById('syncDot');
+            const token = localStorage.getItem('yd_oauth_token');
+            dot.className = 'sync-dot';
+            if (state === 'syncing') dot.classList.add('syncing');
+            else if (token) dot.classList.add('connected');
+        }
+
+        async function pullFromYandexDisk() {
+            const token = localStorage.getItem('yd_oauth_token');
+            if (!token) return;
+
+            try {
+                updateSyncDot('syncing');
+                const res = await fetch(`https://yandex.net{encodeURIComponent(YD_FILE_PATH)}`, {
+                    headers: { 'Authorization': `OAuth ${token}` }
+                });
+
+                if (res.status === 404) {
+                    await pushToYandexDisk();
+                    return;
+                }
+                if (!res.ok) throw new Error('Ошибка чтения');
+
+                const { href } = await res.json();
+                const fileRes = await fetch(href);
+                const cloudData = await fileRes.json();
+
+                if (cloudData && cloudData.updatedAt > appData.updatedAt) {
+                    appData = cloudData;
+                    localStorage.setItem('family_planner_v1', JSON.stringify(appData));
+                    renderWeek();
+                }
+            } catch (e) {
+                console.warn('Ошибка синхронизации (чтение):', e);
+            } finally {
+                updateSyncDot('idle');
+            }
+        }
+
+        async function pushToYandexDisk() {
+            const token = localStorage.getItem('yd_oauth_token');
+            if (!token) return;
+
+            try {
+                updateSyncDot('syncing');
+                const res = await fetch(`https://yandex.net{encodeURIComponent(YD_FILE_PATH)}&overwrite=true`, {
+                    headers: { 'Authorization': `OAuth ${token}` }
+                });
+                if (!res.ok) throw new Error('Ошибка получения ссылки загрузки');
+
+                const { href } = await res.json();
+                await fetch(href, {
+                    method: 'PUT',
+                    body: JSON.stringify(appData)
+                });
+            } catch (e) {
+                console.warn('Ошибка синхронизации (запись):', e);
+            } finally {
+                updateSyncDot('idle');
+            }
+        }
+
+        init();
+    </script>
+</body>
+</html>
