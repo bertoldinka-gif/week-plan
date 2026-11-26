@@ -46,6 +46,8 @@
             top: 0;
             z-index: 100;
             box-shadow: 0 2px 6px rgba(0,0,0,0.12);
+            flex-wrap: wrap;
+            gap: 8px;
         }
 
         .week-nav {
@@ -102,24 +104,6 @@
 
         .icon-btn:active {
             background: rgba(255,255,255,0.2);
-        }
-
-        .sync-dot {
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            background: #ffd166;
-            position: absolute;
-            top: 6px;
-            right: 6px;
-        }
-        .sync-dot.connected { background: #06d6a0; }
-        .sync-dot.syncing { background: #ffffff; animation: pulse 0.8s infinite; }
-
-        @keyframes pulse {
-            0% { transform: scale(1); opacity: 1; }
-            50% { transform: scale(1.4); opacity: 0.6; }
-            100% { transform: scale(1); opacity: 1; }
         }
 
         .days-container {
@@ -429,6 +413,7 @@
             justify-content: flex-end;
             gap: 10px;
             margin-top: 18px;
+            flex-wrap: wrap;
         }
 
         .btn {
@@ -457,27 +442,21 @@
             margin-top: 6px;
         }
 
-        .sync-status-text {
-            font-size: 13px;
-            margin-top: 10px;
-            padding: 8px 10px;
-            border-radius: 8px;
-            display: none;
-            line-height: 1.4;
+        .code-area {
+            width: 100%;
+            min-height: 120px;
+            padding: 10px 12px;
+            border: 1px solid #cbd5e1;
+            border-radius: 10px;
+            font-size: 12px;
+            font-family: monospace;
+            outline: none;
+            resize: vertical;
+            word-break: break-all;
         }
 
-        .sync-status-text.success {
-            display: block;
-            background: #e0f5f3;
-            color: #008b7c;
-            border: 1px solid #00a896;
-        }
-
-        .sync-status-text.error {
-            display: block;
-            background: #fde8ea;
-            color: #b91c1c;
-            border: 1px solid #e63946;
+        .code-area:focus {
+            border-color: var(--teal);
         }
     </style>
 </head>
@@ -491,10 +470,8 @@
         </div>
         <div class="header-actions">
             <button class="icon-btn" onclick="goToday()" title="К текущей неделе">📅</button>
-            <button class="icon-btn" onclick="openSettings()" title="Синхронизация">
-                ⚙️
-                <span class="sync-dot" id="syncDot"></span>
-            </button>
+            <button class="icon-btn" onclick="openExportModal()" title="Поделиться делами">📤</button>
+            <button class="icon-btn" onclick="openImportModal()" title="Импорт дел">📥</button>
         </div>
     </header>
 
@@ -523,22 +500,32 @@
         </div>
     </div>
 
-    <!-- Модальное окно настроек синхронизации -->
-    <div class="modal-overlay" id="settingsModal">
+    <!-- Модальное окно экспорта -->
+    <div class="modal-overlay" id="exportModal">
         <div class="modal">
-            <h3>Синхронизация семьи</h3>
-            <div class="form-group">
-                <label for="ydTokenInput">OAuth-токен Яндекс Диска</label>
-                <input type="text" id="ydTokenInput" class="form-input" placeholder="Вставьте токен сюда">
-                <p class="help-text">
-                    Чтобы дела обновлялись у всей семьи, получите бесплатный токен на
-                    yandex.ru/dev/disk/poligon (под общей почтой) и вставьте его на всех телефонах.
-                </p>
-                <div id="syncStatusText" class="sync-status-text"></div>
-            </div>
+            <h3>Поделиться делами</h3>
+            <p class="help-text" style="margin-bottom: 10px;">
+                Скопируйте код и отправьте его в семейный чат. На другом устройстве нажмите «Импорт» и вставьте этот код.
+            </p>
+            <textarea id="exportCodeArea" class="code-area" readonly></textarea>
             <div class="modal-buttons">
-                <button class="btn btn-cancel" onclick="closeModal('settingsModal')">Закрыть</button>
-                <button class="btn btn-primary" onclick="saveSettings()">Сохранить</button>
+                <button class="btn btn-cancel" onclick="closeModal('exportModal')">Закрыть</button>
+                <button class="btn btn-primary" onclick="copyExportCode()">Копировать</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Модальное окно импорта -->
+    <div class="modal-overlay" id="importModal">
+        <div class="modal">
+            <h3>Импорт дел</h3>
+            <p class="help-text" style="margin-bottom: 10px;">
+                Вставьте код, который вам прислали, и нажмите «Импортировать».
+            </p>
+            <textarea id="importCodeArea" class="code-area" placeholder="Вставьте код сюда..."></textarea>
+            <div class="modal-buttons">
+                <button class="btn btn-cancel" onclick="closeModal('importModal')">Отмена</button>
+                <button class="btn btn-primary" onclick="applyImportCode()">Импортировать</button>
             </div>
         </div>
     </div>
@@ -556,8 +543,6 @@
 
         const MONTHS_GEN = ['Января', 'Февраля', 'Марта', 'Апреля', 'Мая', 'Июня', 'Июля', 'Августа', 'Сентября', 'Октября', 'Ноября', 'Декабря'];
         const DAYS_SHORT = ['пн', 'вт', 'ср', 'чт', 'пт', 'сб', 'вс'];
-        const YD_FILE_PATH = 'disk:/family_planner_data.json';
-        const YD_API_BASE = 'https://cloud-api.yandex.net/v1/disk';
 
         function init() {
             const local = localStorage.getItem('family_planner_v1');
@@ -567,9 +552,6 @@
             const todayStr = formatDateISO(new Date());
             expandedDates.add(todayStr);
             renderWeek();
-            updateSyncDot();
-            pullFromYandexDisk();
-            setInterval(pullFromYandexDisk, 15000);
         }
 
         function getMonday(offsetWeeks = 0) {
@@ -819,7 +801,7 @@
 
             expandedDates.add(selectedDateStr);
             closeModal('addModal');
-            saveAndSync();
+            saveData();
         }
 
         function saveEditedTask() {
@@ -846,7 +828,7 @@
             task.dow = dow;
 
             closeModal('addModal');
-            saveAndSync();
+            saveData();
         }
 
         function toggleTask(taskId, dateISO) {
@@ -856,158 +838,92 @@
             } else {
                 appData.completed[key] = true;
             }
-            saveAndSync();
+            saveData();
         }
 
         function deleteTask(taskId) {
             if (!confirm('Удалить это дело? (Если оно повторяющееся, оно удалится со всех недель)')) return;
             appData.tasks = appData.tasks.filter(t => t.id !== taskId);
-            saveAndSync();
+            saveData();
         }
 
-        function saveAndSync() {
+        function saveData() {
             appData.updatedAt = Date.now();
             localStorage.setItem('family_planner_v1', JSON.stringify(appData));
             renderWeek();
-            pushToYandexDisk();
         }
 
-        function openSettings() {
-            document.getElementById('ydTokenInput').value = localStorage.getItem('yd_oauth_token') || '';
-            const statusEl = document.getElementById('syncStatusText');
-            statusEl.className = 'sync-status-text';
-            statusEl.textContent = '';
-            document.getElementById('settingsModal').classList.add('open');
+        // --- Экспорт / импорт ---
+        function encodeData(data) {
+            const json = JSON.stringify(data);
+            const bytes = new TextEncoder().encode(json);
+            let binary = '';
+            for (let i = 0; i < bytes.length; i++) {
+                binary += String.fromCharCode(bytes[i]);
+            }
+            return btoa(binary);
         }
 
-        function showSyncStatus(message, isSuccess) {
-            const statusEl = document.getElementById('syncStatusText');
-            statusEl.textContent = message;
-            statusEl.className = `sync-status-text ${isSuccess ? 'success' : 'error'}`;
+        function decodeData(code) {
+            const binary = atob(code.trim());
+            const bytes = new Uint8Array(binary.length);
+            for (let i = 0; i < binary.length; i++) {
+                bytes[i] = binary.charCodeAt(i);
+            }
+            const json = new TextDecoder().decode(bytes);
+            return JSON.parse(json);
         }
 
-        async function saveSettings() {
-            const token = document.getElementById('ydTokenInput').value.trim();
-            if (!token) {
-                showSyncStatus('Введите OAuth-токен.', false);
+        function openExportModal() {
+            const code = encodeData(appData);
+            document.getElementById('exportCodeArea').value = code;
+            document.getElementById('exportModal').classList.add('open');
+        }
+
+        function copyExportCode() {
+            const area = document.getElementById('exportCodeArea');
+            area.select();
+            area.setSelectionRange(0, area.value.length);
+            try {
+                document.execCommand('copy');
+            } catch (e) {}
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(area.value).catch(() => {});
+            }
+            const btn = event.target;
+            const old = btn.textContent;
+            btn.textContent = 'Скопировано!';
+            setTimeout(() => { btn.textContent = old; }, 1500);
+        }
+
+        function openImportModal() {
+            document.getElementById('importCodeArea').value = '';
+            document.getElementById('importModal').classList.add('open');
+        }
+
+        function applyImportCode() {
+            const code = document.getElementById('importCodeArea').value.trim();
+            if (!code) {
+                alert('Вставьте код.');
                 return;
             }
-
-            showSyncStatus('Проверка токена…', false);
-
             try {
-                const res = await fetch(`${YD_API_BASE}/?path=${encodeURIComponent(YD_FILE_PATH)}`, {
-                    headers: { 'Authorization': `OAuth ${token}` }
-                });
-
-                if (res.status === 401) {
-                    showSyncStatus('Ошибка 401: неверный токен.', false);
+                const data = decodeData(code);
+                if (!data || !Array.isArray(data.tasks)) {
+                    alert('Некорректный код.');
                     return;
                 }
-
-                if (res.status === 404) {
-                    // Файла ещё нет — создадим его первым сохранением
-                    localStorage.setItem('yd_oauth_token', token);
-                    await pushToYandexDisk();
-                    showSyncStatus('Успешно подключено! Файл создан и синхронизирован.', true);
-                    closeModal('settingsModal');
-                    updateSyncDot();
-                    return;
-                }
-
-                if (!res.ok) {
-                    const errText = await res.text().catch(() => '');
-                    showSyncStatus(`Ошибка ${res.status}: ${errText || 'не удалось проверить токен'}`, false);
-                    return;
-                }
-
-                // Токен рабочий, файл существует — сохраняем и подтягиваем данные
-                localStorage.setItem('yd_oauth_token', token);
-                await pullFromYandexDisk();
-                showSyncStatus('Успешно подключено! Файл синхронизирован.', true);
-                closeModal('settingsModal');
-                updateSyncDot();
+                if (!confirm('Импортировать дела? Текущие дела будут заменены.')) return;
+                appData = {
+                    updatedAt: data.updatedAt || Date.now(),
+                    tasks: data.tasks,
+                    completed: data.completed || {}
+                };
+                saveData();
+                closeModal('importModal');
+                alert('Импорт выполнен успешно.');
             } catch (e) {
-                showSyncStatus('Ошибка сети. Проверьте подключение к интернету.', false);
-            }
-        }
-
-        function updateSyncDot(state = 'idle') {
-            const dot = document.getElementById('syncDot');
-            const token = localStorage.getItem('yd_oauth_token');
-            dot.className = 'sync-dot';
-            if (state === 'syncing') dot.classList.add('syncing');
-            else if (token) dot.classList.add('connected');
-        }
-
-        async function pullFromYandexDisk() {
-            const token = localStorage.getItem('yd_oauth_token');
-            if (!token) return;
-
-            try {
-                updateSyncDot('syncing');
-                const metaRes = await fetch(`${YD_API_BASE}/resources?path=${encodeURIComponent(YD_FILE_PATH)}`, {
-                    headers: { 'Authorization': `OAuth ${token}` }
-                });
-
-                if (metaRes.status === 404) {
-                    // Файла нет — загружаем текущее состояние
-                    await pushToYandexDisk();
-                    return;
-                }
-
-                if (!metaRes.ok) throw new Error('Ошибка чтения метаданных');
-
-                // Получаем ссылку на скачивание
-                const dlRes = await fetch(`${YD_API_BASE}/resources/download?path=${encodeURIComponent(YD_FILE_PATH)}`, {
-                    headers: { 'Authorization': `OAuth ${token}` }
-                });
-
-                if (!dlRes.ok) throw new Error('Ошибка получения ссылки на скачивание');
-
-                const { href } = await dlRes.json();
-
-                // ВАЖНО: скачиваем по подписанной ссылке БЕЗ заголовка Authorization,
-                // иначе браузер блокирует запрос из-за CORS на downloader.disk.yandex.ru
-                const fileRes = await fetch(href);
-                if (!fileRes.ok) throw new Error('Ошибка скачивания файла');
-
-                const cloudData = await fileRes.json();
-
-                if (cloudData && cloudData.updatedAt > appData.updatedAt) {
-                    appData = cloudData;
-                    localStorage.setItem('family_planner_v1', JSON.stringify(appData));
-                    renderWeek();
-                }
-            } catch (e) {
-                console.warn('Ошибка синхронизации (чтение):', e);
-            } finally {
-                updateSyncDot('idle');
-            }
-        }
-
-        async function pushToYandexDisk() {
-            const token = localStorage.getItem('yd_oauth_token');
-            if (!token) return;
-
-            try {
-                updateSyncDot('syncing');
-                const res = await fetch(`${YD_API_BASE}/resources/upload?path=${encodeURIComponent(YD_FILE_PATH)}&overwrite=true`, {
-                    headers: { 'Authorization': `OAuth ${token}` }
-                });
-                if (!res.ok) throw new Error('Ошибка получения ссылки загрузки');
-
-                const { href } = await res.json();
-
-                // Загрузка по подписанной ссылке также без Authorization
-                await fetch(href, {
-                    method: 'PUT',
-                    body: JSON.stringify(appData)
-                });
-            } catch (e) {
-                console.warn('Ошибка синхронизации (запись):', e);
-            } finally {
-                updateSyncDot('idle');
+                alert('Не удалось прочитать код. Проверьте, что он скопирован полностью.');
             }
         }
 
