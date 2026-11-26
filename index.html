@@ -7,6 +7,8 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="theme-color" content="#00a896">
+    <link rel="manifest" href="manifest.json">
+    <link rel="apple-touch-icon" href="icon-192.png">
     <title>Семейный ежедневник</title>
     <style>
         :root {
@@ -510,7 +512,7 @@
             <textarea id="exportCodeArea" class="code-area" readonly></textarea>
             <div class="modal-buttons">
                 <button class="btn btn-cancel" onclick="closeModal('exportModal')">Закрыть</button>
-                <button class="btn btn-primary" onclick="copyExportCode()">Копировать</button>
+                <button class="btn btn-primary" onclick="copyExportCode(event)">Копировать</button>
             </div>
         </div>
     </div>
@@ -880,7 +882,7 @@
             document.getElementById('exportModal').classList.add('open');
         }
 
-        function copyExportCode() {
+        function copyExportCode(event) {
             const area = document.getElementById('exportCodeArea');
             area.select();
             area.setSelectionRange(0, area.value.length);
@@ -890,7 +892,8 @@
             if (navigator.clipboard && navigator.clipboard.writeText) {
                 navigator.clipboard.writeText(area.value).catch(() => {});
             }
-            const btn = event.target;
+            const btn = event && event.target ? event.target : null;
+            if (!btn) return;
             const old = btn.textContent;
             btn.textContent = 'Скопировано!';
             setTimeout(() => { btn.textContent = old; }, 1500);
@@ -928,6 +931,13 @@
         }
 
         init();
+
+        // Регистрация service worker для работы офлайн и установки как приложение
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('./sw.js').catch(() => {});
+            });
+        }
     </script>
 </body>
 </html>
