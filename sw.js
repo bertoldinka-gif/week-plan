@@ -1,4 +1,4 @@
-const CACHE_NAME = 'family-planner-v1';
+const CACHE_NAME = 'family-planner-v2';
 const ASSETS = ['./index.html', './manifest.json'];
 
 self.addEventListener('install', (event) => {
