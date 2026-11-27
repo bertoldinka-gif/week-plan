@@ -947,15 +947,27 @@
             return bytes;
         }
 
-        // Компактный формат: [version, updatedAt, tasks, completed]
-        // tasks: массив [id, title, time, repeat, dow, dateStr]
-        // completed: массив [taskId, dateISO] только за последние 14 дней
+                // Компактный формат: [version, updatedAt, tasks, completed, isSingleWeek]
         function buildCompactPayload() {
-            const cutoff = new Date();
-            cutoff.setDate(cutoff.getDate() - 14);
-            const cutoffISO = formatDateISO(cutoff);
+            const monday = getMonday(weekOffset);
+            const weekDates = [];
+            for (let i = 0; i < 7; i++) {
+                const d = new Date(monday);
+                d.setDate(monday.getDate() + i);
+                weekDates.push(formatDateISO(d));
+            }
+            const weekStart = weekDates[0];
+            const weekEnd = weekDates[6];
 
-            const compactTasks = appData.tasks.map(t => ([
+            // Берем только задачи, попадающие в 7 дней текущей открытой недели
+            const weekTasks = appData.tasks.filter(t => {
+                if (t.repeat) {
+                    return t.dateStr <= weekEnd;
+                }
+                return t.dateStr >= weekStart && t.dateStr <= weekEnd;
+            });
+
+            const compactTasks = weekTasks.map(t => ([
                 t.id,
                 t.title,
                 t.time || '',
@@ -964,26 +976,26 @@
                 t.dateStr
             ]));
 
+            const weekDateSet = new Set(weekDates);
             const compactCompleted = [];
             for (const key of Object.keys(appData.completed)) {
-                // ключ вида "<taskId>_<YYYY-MM-DD>"
                 const sep = key.lastIndexOf('_');
                 if (sep < 0) continue;
                 const taskId = key.slice(0, sep);
                 const dateISO = key.slice(sep + 1);
-                if (dateISO >= cutoffISO) {
+                if (weekDateSet.has(dateISO)) {
                     compactCompleted.push([taskId, dateISO]);
                 }
             }
 
-            return [1, appData.updatedAt || Date.now(), compactTasks, compactCompleted];
+            return [1, appData.updatedAt || Date.now(), compactTasks, compactCompleted, 1];
         }
 
         function expandCompactPayload(payload) {
             if (!Array.isArray(payload) || payload[0] !== 1) {
                 throw new Error('Unknown payload version');
             }
-            const [, updatedAt, compactTasks, compactCompleted] = payload;
+            const [, updatedAt, compactTasks, compactCompleted, isSingleWeek] = payload;
             const tasks = compactTasks.map(row => {
                 const [id, title, time, repeatNum, dow, dateStr] = row;
                 return {
@@ -1003,7 +1015,8 @@
             return {
                 updatedAt: updatedAt || Date.now(),
                 tasks,
-                completed
+                completed,
+                isSingleWeek: !!isSingleWeek
             };
         }
 
@@ -1019,17 +1032,13 @@
         function decodeData(code) {
             const trimmed = String(code).trim();
 
-            // 1) Новый формат: LZW + Base64URL
             try {
                 const bytes = base64UrlToBytes(trimmed);
                 const json = lzwDecode(bytes);
                 const payload = JSON.parse(json);
                 return expandCompactPayload(payload);
-            } catch (e) {
-                // fallthrough
-            }
+            } catch (e) {}
 
-            // 2) Старый формат: Base64 от JSON {updatedAt, tasks, completed}
             try {
                 let b64 = trimmed.replace(/-/g, '+').replace(/_/g, '/');
                 while (b64.length % 4) b64 += '=';
@@ -1040,12 +1049,11 @@
                     return {
                         updatedAt: data.updatedAt || Date.now(),
                         tasks: data.tasks,
-                        completed: data.completed || {}
+                        completed: data.completed || {},
+                        isSingleWeek: false
                     };
                 }
-            } catch (e) {
-                // ignore
-            }
+            } catch (e) {}
 
             throw new Error('Не удалось распознать код');
         }
@@ -1090,12 +1098,29 @@
                     alert('Некорректный код.');
                     return;
                 }
-                if (!confirm('Импортировать дела? Текущие дела будут заменены.')) return;
-                appData = {
-                    updatedAt: data.updatedAt || Date.now(),
-                    tasks: data.tasks,
-                    completed: data.completed || {}
-                };
+
+                if (data.isSingleWeek) {
+                    if (!confirm('Добавить расписание из кода к вашим делам?')) return;
+                    // Объединяем без дубликатов (по id или совпадению названия + даты + времени)
+                    data.tasks.forEach(newTask => {
+                        const exists = appData.tasks.some(old =>
+                            old.id === newTask.id ||
+                            (old.title === newTask.title && old.dateStr === newTask.dateStr && old.time === newTask.time)
+                        );
+                        if (!exists) {
+                            appData.tasks.push(newTask);
+                        }
+                    });
+                    Object.assign(appData.completed, data.completed || {});
+                } else {
+                    if (!confirm('Импортировать дела? Текущие дела будут заменены.')) return;
+                    appData = {
+                        updatedAt: data.updatedAt || Date.now(),
+                        tasks: data.tasks,
+                        completed: data.completed || {}
+                    };
+                }
+
                 saveData();
                 closeModal('importModal');
                 alert('Импорт выполнен успешно.');
